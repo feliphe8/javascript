@@ -1,0 +1,1 @@
+console.log("Hello World!"); // No terminal, executar o comando node nome_arquivo para rodar o js
