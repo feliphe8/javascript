@@ -53,8 +53,8 @@ const expressValidator = require('express-validator');
 let app = express(); // retorna toda a aplicação
 
 
-app.use(bodyParser.urlencoded({extended: false}));
-app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({extended: false, limit: '50mb'})); // Setando o limite de bytes enviados por POST
+app.use(bodyParser.json({limit: '50mb'})); // Setando o limite de bytes enviados por POST
 app.use(expressValidator());
 
 consign().include('routes').include('utils').into(app); // Inclui todas as rotas em app

@@ -50,17 +50,19 @@ class UserController {
                 let user = new User();
                 user.loadFromJSON(result); // Carrega os dados JSON dentro do objeto user
 
-                user.save(); // Salva no localStorage
+                user.save().then(user => {
 
-                this.getTr(user, tr);
 
-                this.updateCount(); // Atualiza as estatísticas
+                    this.getTr(user, tr);
 
-                this.formUpdateEl.reset(); // Limpa o formulário de edição
+                    this.updateCount(); // Atualiza as estatísticas
 
-                btn.disabled = false; // Habilita o botão novamente após a criação do usuário
+                    this.formUpdateEl.reset(); // Limpa o formulário de edição
 
-                this.showPanelCreate(); // Mostra o form de create
+                    btn.disabled = false; // Habilita o botão novamente após a criação do usuário
+
+                    this.showPanelCreate(); // Mostra o form de create
+                });
 
             },(e) => {
                 console.error(e);
@@ -91,12 +93,13 @@ class UserController {
 
             this.getPhoto(this.formEl).then((content) => { // Executa a primeira função qnd der certo, qnd der errado executa a segunda
                 values.photo = content;
-                values.save(); // Salva no localStorage
-                this.addLine(values); // Passa o usuario para criar os elementos no HTML
+                values.save().then(user => {
+                    this.addLine(user); // Passa o usuario para criar os elementos no HTML
 
-                this.formEl.reset(); // Limpa o formulário
+                    this.formEl.reset(); // Limpa o formulário
 
-                btn.disabled = false; // Habilita o botão novamente após a criação do usuário
+                    btn.disabled = false; // Habilita o botão novamente após a criação do usuário
+                }); 
 
             },(e) => {
                 console.error(e);
@@ -178,7 +181,7 @@ class UserController {
     // Carrega todas os dados que estão na sessão
     selectAll(){
 
-        HttpRequest.get('/users').then(data => {
+        User.getUsersStorage().then(data => {
 
             data.users.forEach(dataUser => {
 
@@ -236,9 +239,11 @@ class UserController {
             if (confirm("Deseja realmente excluir este usuário?")) { // Abre uma janela de confirmação
                 let user = new User();
                 user.loadFromJSON(JSON.parse(tr.dataset.user)); // Carrega o user com informações que vem do JSON
-                user.remove();
-                tr.remove(); // Remove um item do array
-                this.updateCount();
+                user.remove().then(data => {
+
+                    tr.remove(); // Remove um item do array
+                    this.updateCount();
+                });
             }
         });
 

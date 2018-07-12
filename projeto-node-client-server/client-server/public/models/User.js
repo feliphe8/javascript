@@ -69,7 +69,7 @@ class User {
                     this[name] = new Date(json[name]); // Transforma de string para Data
                     break;
                 default:
-                    this[name] = json[name];
+                    if(name.substring(0, 1) === '_')this[name] = json[name]; // verifica se o name(atributo) começa com underline => 0 = primeira posição, 1 apenas um char
             }
 
         }
@@ -77,71 +77,50 @@ class User {
 
     // Função que verifica se existe dados na sessão. Cria um array users e verifica se existe dados na sessão, se existir coloca os dados no array. Retorna o array users
     static getUsersStorage(){
-        let users = [];
 
-        if (localStorage.getItem("users")) { // Verifica se já existe na sessão um array users
-            users = JSON.parse(localStorage.getItem("users")); // Sobreescreve com o conteudo que está armazenado no sessionStorage
-        }
-
-        return users;
+        return Fetch.get('/users');
     }
 
-    getNewId(){
+    // Método para converter o objeto para json
+    toJSON(){
+        
+        let json = {};
 
-        let usersID = parseInt(localStorage.getItem("usersID")); // Pega o id do localStorage
+        Object.keys(this).forEach(key => { // Lê os atributos do objeto instânciado *** retorna um array
 
-        if(!usersID > 0) usersID = 0; // Verifica se não existe
-        usersID++;
+            if(this[key] !== undefined) json[key] = this[key]; // Verifica se o atributo do objeto não é undefined
+        });
 
-        localStorage.setItem("usersID", usersID); // Guarda o novo valor no localStorage
-
-        return usersID;
+        return json;
     }
 
     save(){
 
-        let users = User.getUsersStorage(); // Traz o array user
+        return new Promise((resolve, reject) => { // retorna uma promessa para quem chamou o save
 
-        if(this.id > 0){ // Verifica se o id já existe
-            // Editando um usuário
+            let promise;
 
-            //let user = users.filter(u=>{ return u._id == this.id}) // Filtra no array um usuário que tem o mesmo id - retorna todo o objeto
+            if (this.id) { // Se tem id é pq vai editar
+                promise = Fetch.put(`/users/${this.id}`, this.toJSON()); // Retorna uma promise e guarda em promise
+            } else { // Senão é cadastro
+                promise = Fetch.post(`/users`, this.toJSON()); // Retorna uma promise e guarda em promise
+            }
 
-            users.map( u => {
+            promise.then(data => {
 
-                if(u._id == this.id){ // Verifica se o user que está no localStorate (user) é igual a instância atual (this)
-                   Object.assign(u, this); // Sobreescreve o user do array (localStorage) com o novo valor (a instância atual (this))
-                }
-                return u;
-            }); 
+                this.loadFromJSON(data); // Carrega o objeto com informações que vem de um json
 
+                resolve(this);
+            }).catch(e => {
 
-
-        } else { // Criando um usuário
-
-            this._id = this.getNewId(); // Atribui o id ao objeto
-            users.push(this); // push adiciona ao final do array
-    
-            // sessionStorage permite gravar dados na sessão. Se fechar o navegador ou trocar de aba, deixa de existir.
-            //sessionStorage.setItem("users", JSON.stringify(users));
-        }
-
-        // localStorage grava no navegador
-        localStorage.setItem("users", JSON.stringify(users));
+                reject(e);
+            });
+        });
 
     }
 
     remove(){
-        let users = User.getUsersStorage(); // Traz o array user do localStorage
-        users.forEach((userData, index) => { // Percorre o array
-
-            if(this._id == userData._id){ // Verifica se o id que eu quero excluir é o mesmo que veio do localStorage
-
-                users.splice(index, 1); // Remove o usuário do array. O primeiro parâmetro é o index e o segundo é quantos elementos(no caso usuários) vc quer remover
-
-            }
-        });
-
-        localStorage.setItem("users", JSON.stringify(users));
+        
+        return Fetch.delete(`/users/${this.id}`); // Retorna uma promessa
     }
 }

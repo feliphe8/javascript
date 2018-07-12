@@ -46,7 +46,8 @@ class HttpRequest {
                 resolve(obj); // No caso de sucesso, passa o obj para o método que está esperando essa promise, no caso no selectAll em UserController
         };
 
-        ajax.send();
+        ajax.setRequestHeader('Content-Type', 'application/json');
+        ajax.send(JSON.stringify(params));
 
         });
     }
