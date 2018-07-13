@@ -2,8 +2,11 @@ class DropBoxController {
 
     constructor(){
 
+        this.currentFolder = ['principal']; // Pasta atual
+
         this.onSelectionChange = new Event('selectionchange'); // Adiciona um novo atributo na classe e cria seu próprio evento
 
+        this.navElement = document.querySelector('#browse-location'); // Pega o nav para navegação(breadcrumbs)
         this.btnSendFileElement = document.querySelector('#btn-send-file'); // Pega o botão de enviar arquivos
         this.inputFilesElement = document.querySelector('#files'); // Pega o input escondido
         this.snackModalElement = document.querySelector('#react-snackbar-root'); // Pega o modal escondido(barra de progresso)
@@ -11,9 +14,14 @@ class DropBoxController {
         this.namefileElement = this.snackModalElement.querySelector('.filename'); // Procura a classe filename dentro do Modal
         this.timeleftElement = this.snackModalElement.querySelector('.timeleft'); // Procura a classe timeleft dentro do Modal
         this.listFilesElement = document.querySelector('#list-of-files-and-directories'); // Pega a UL onde vai ser listado os arquivos
+
+        this.btnNewFolder = document.querySelector('#btn-new-folder'); // Pega o botão de criar nova pasta
+        this.btnRename = document.querySelector('#btn-rename'); // Pega o botão de renomear
+        this.btnDelete = document.querySelector('#btn-delete'); // Pega o botão de deletar
+
         this.connectFirebase(); // Conecta com o DB Firebase
         this.initEvents(); // Chama o método que inicia os eventos
-        this.readFiles(); // Acessa o DB e lê as informações
+        this.openFolder(); // Abre uma pasta, acessa o db e lê as informações
     }
 
     connectFirebase(){
@@ -29,10 +37,189 @@ class DropBoxController {
         firebase.initializeApp(config);
     }
 
+    // Método que retorna todos os elementos da lista que estão selecionados(com a classe selected)
+    getSelection(){
+        return this.listFilesElement.querySelectorAll('.selected');
+    }
+
+    // Método que remove uma pasta
+    removeFolderTask(ref, name){
+
+        return new Promise((resolve, reject) => {
+
+            // Retorna a referência da pasta no database
+            let folderRef = this.getFirebaseReference(ref + '/' + name);
+
+            // o Firebase fica olhando para a pasta desejada
+            folderRef.on('value', snapshot => {
+
+                // Tira a atenção do Firebase dessa pasta
+                folderRef.off('value'); // Dessa maneira ele não executa mais de uma vez
+
+                // Para cada item que ele encontrar
+                snapshot.forEach(item => {
+                    
+                    // Guarda as informações no data
+                    let data = item.val();
+                    data.key = item.key;
+
+                    // Verifica se é uma pasta
+                    if(data.type === 'folder'){
+
+                        // Chama o próprio método passando a referência da pasta e o nome que veio do Firebase
+                        this.removeFolderTask(ref + '/' + name, data.name).then(() => {
+                            
+                            resolve({fields:{key: data.key}});
+
+                        }).catch(error => {
+                            reject(error);
+                        });
+                    } else if(data.type){ // Se tem um type(para não dar bug)
+
+                        // Remove um arquivo
+                        this.removeFile(ref + '/' + name, data.name).then(() => {
+                            
+                            resolve({fields:{key: data.key}});
+
+                        }).catch(error => {
+                            reject(error);
+                        });
+                    }
+
+                });
+
+                // Remove do Firebase
+                folderRef.remove();
+            });
+
+        });
+    }
+
+    // Método que remove o arquivo do disco no servidor
+    removeTask(){
+
+        let promises = []; // cria um array
+        this.getSelection().forEach(li => { // faz um foreach nos li's que foram selecionados
+
+            let file = JSON.parse(li.dataset.file); // pega as informações contidas no dataset.file do li
+            let key = li.dataset.key; // pega a chave do dataset do li
+
+            promises.push(new Promise((resolve, reject) => { // Cria uma promise e guarda no array
+
+                // Verifica se o arquivo é uma pasta
+                if(file.type === 'folder'){
+
+                    // Método que remove uma pasta
+                    this.removeFolderTask(this.currentFolder.join('/'), file.name).then(() => {
+
+                        resolve({fields: {key}});
+                    });
+
+                } else if(file.type) {// Esse if é para não cair como referência(aquele bug onde aparecia um undefined no app)
+
+                    // Chama o método que remove o arquivo, passando a referência da pasta e o nome do arquivo
+                    this.removeFile(this.currentFolder.join('/'), file.name).then(() => {
+
+                        resolve({fields: {key}});
+                    });
+                }
+                
+            }));
+
+            /* CÓDIGO PARA O REMOVE DO SERVIDOR WEB
+            let formData = new FormData(); // Instância o formdata para guarda as informações que serão enviadas
+            formData.append('path', file.path); // guarda o nome do atributo(path) e o seu valor(file.path) no formData
+            formData.append('key', key);
+
+            promises.push(this.ajax('/file', 'DELETE', formData));
+
+            */
+
+        });
+
+        return Promise.all(promises); // Retorna todas as promises
+    }
+
+    // Rotina para apagar arquivo
+    removeFile(ref, name){
+
+        // Pega a referência do arquivo no storage
+        let fileRef = firebase.storage().ref(ref).child(name);
+
+        // Apaga o arquivo no Firebase Storage
+        return fileRef.delete(); // Retorna a promise que vem do delete() = método do Firebase
+    }
+
     initEvents(){
 
+        this.btnNewFolder.addEventListener('click', event => { // Adiciona o evento de click no botão Criar nova pasta
+
+            let name = prompt("Nome da nova pasta:"); // Prompt para o usuário para pegar o nome da nova pasta
+
+            if(name){ // Se name existir
+                this.getFirebaseReference().push().set({ // Envia para o Firebase
+                    name,
+                    type: 'folder',
+                    path: this.currentFolder.join('/') // pega o nome da pasta atual e coloca uma barra
+                });
+            }
+        });
+
+        this.btnDelete.addEventListener('click', event => { // Adiciona o evento de click no botão delete
+
+            this.removeTask().then(responses => { // Chama o método removeTask que remove o arquivo no disco no servidor e retorna uma promessa para excluir a referência do arquivo no Firebase
+                
+                responses.forEach(response => { // Para cada response(item excluido)
+
+                    if(response.fields.key){ // Se existe o campo key
+                        this.getFirebaseReference().child(response.fields.key).remove(); // Remove a referência no Firebase
+                    }
+                });
+
+            }).catch(error => {
+                console.error(error);
+            });
+        });
+
+        this.btnRename.addEventListener('click', event => { // Adiciona o evento de click no botão rename
+
+            let li = this.getSelection()[0]; // Retorna o primeiro index
+
+            // As informações do dataset é do tipo string, o JSON.parse converte para JSON
+            let file = JSON.parse(li.dataset.file);// Pega as informações do arquivo contidas no dataset do li
+
+            let name = prompt("Renomear o arquivo:", file.name); // abre um prompt para o usuário renomear
+
+            // Se name tiver algum conteúdo, é pq o usuário altero o nome. Entra no if
+            if(name) {
+                file.name = name; // Troca o nome
+
+                this.getFirebaseReference().child(li.dataset.key).set(file); // Encontra o li selecionado com a hash que está no dataset e salva no Firebase
+            }
+
+        });
+
         this.listFilesElement.addEventListener('selectionchange', event => { // Adiciona o evento criado nessa classe ao ul
-            console.log('selectionchange');
+            
+            // Faz um switch nos li's que estão selecionados. .length traz a quantidade
+            switch(this.getSelection().length){
+                // Esconde os botões delete e rename caso nenhum li esteja selecionado
+                case 0:
+                    this.btnDelete.style.display = 'none';
+                    this.btnRename.style.display = 'none';
+                    break;
+                // Mostra os botões delete e rename caso apenas 1 li esteja selecionado
+                case 1:
+                    this.btnDelete.style.display = 'block';
+                    this.btnRename.style.display = 'block';
+                    break;
+                // Mostra o botão delete e esconde o rename caso mais de um li esteja selecionado
+                default:
+                    this.btnDelete.style.display = 'block';
+                    this.btnRename.style.display = 'none';
+
+            };
+
         });
 
 
@@ -48,13 +235,34 @@ class DropBoxController {
 
             this.uploadTask(event.target.files).then(responses => {// event.target.files = onde estão os arquivos que vieram do input
                 // Recebe respostas(Promises) do uploadTask
+
+                console.log('responses', responses);
+
+                responses.forEach(response => { // Para cada response faça:
+                    
+                    this.getFirebaseReference().push().set({ // Faz o push das informações para o Firebase
+                        // Cria um objeto JSON e guarda apenas as informações necessárias que vem do response(Firebase) no app
+                        name: response.name,
+                        type: response.contentType,
+                        path: response.fullPath, // response.downloadURLs[0]
+                        size: response.size
+                    });
+
+                });
+
+                console.log('responses',responses);
+
+
+                this.uploadComplete();
+
+                /* CÓDIGO PARA UPLOAD DE ARQUIVOS EM SERVIDOR WEB
                 responses.forEach(response => { // Para cada response faça:
                     
                     this.getFirebaseReference().push().set(response.files['input-file']); // Faz o push das informações para o Firebase
 
                 });
 
-                this.uploadComplete();
+                */
 
             }).catch(error => {
                 this.uploadComplete();
@@ -76,9 +284,12 @@ class DropBoxController {
     }
 
     // Pega a referência do Firebase
-    getFirebaseReference(){
+    getFirebaseReference(path){
 
-        return firebase.database().ref('files'); // Retorna a referência do firebase para o documento(JSON ou Coleção) 'files' 
+        // Se não existir path, path recebe o valor do currentFolder(pasta principal)
+        if (!path) path = this.currentFolder.join('/');
+
+        return firebase.database().ref(path); // Retorna a referência do firebase para o documento(JSON ou Coleção) path 
     }
 
     // Método toggle para mostrar e esconder o modal do progressBar
@@ -87,41 +298,89 @@ class DropBoxController {
         this.snackModalElement.style.display = (show) ? 'block' : 'none';
     }
 
+    // Método que utiliza o ajax para fazer a requisição
+    // Parâmetros opcionais: method, formData, onprogress = função que vai calcular o tempo estimado de upload, onloadstart
+    ajax(url, method = 'GET', formData = new FormData(), onprogress = function(){}, onloadstart = function(){}){
+
+        return new Promise((resolve, reject) => { // Retorna uma promise com a requisição
+
+            // faz o upload utilizando ajax
+            let ajax = new XMLHttpRequest();
+            ajax.open(method, url);
+            ajax.onload = event => {
+
+                try{
+                    resolve(JSON.parse(ajax.responseText));
+                } catch(e){
+                    reject(e);
+                }
+            };
+
+            ajax.onerror = event => {
+                reject(event);
+            };
+
+            ajax.upload.onprogress = onprogress(); // Executa o onprogress dentro do upload para pegar o tempo estimado
+
+            onloadstart();
+
+            ajax.send(formData);// envia o arquivo
+
+        });
+    }
+
     uploadTask(files){
         let promises = [];
 
         // files é uma coleção, precisa converter para array
         [...files].forEach(file => { // faz um forEach para cada arquivo
 
-            promises.push(new Promise((resolve, reject) => { // coloca uma nova promise em cada posição
+            // Cria uma nova promise e guarda no array
+            promises.push(new Promise((resolve, reject) => {
 
-                // faz o upload utilizando ajax
-                let ajax = new XMLHttpRequest();
-                ajax.open('POST', '/upload');
-                ajax.onload = event => {
+                // Cria uma referência no Firebase Storage com o nome do currentFolder e com um node com o nome do file.name
+                let fileRef = firebase.storage().ref(this.currentFolder.join('/')).child(file.name);
 
-                    try{
-                        resolve(JSON.parse(ajax.responseText));
-                    } catch(e){
-                        reject(e);
-                    }
-                };
+                // Faz o upload .put() retorna um task(quem manipula o upload e retorna eventos)
+                let task = fileRef.put(file);
 
-                ajax.onerror = event => {
-                    reject(event);
-                };
+                // Storage fica olhando por uma mudança de estado
+                task.on('state_changed', snapshot => {
+                    // Função de progresso - mostra o andamento do upload
+                    // Chama a função upload progress
+                    this.uploadProgress({
+                        loaded: snapshot.bytesTransferred,
+                        total: snapshot.totalBytes
+                    }, file);
+                    
+                }, error => {
+                    // Função caso de erro
+                    reject(error);
 
-                ajax.upload.onprogress = event => { // Executa o onprogress dentro do upload para pegar o tempo estimado
-                    this.uploadProgress(event, file) // Passa para o método o evento onde contém as informações de quantos bytes faltam para fazer o upload e o arquivo como segundo parâmetro.
-                };
+                }, () => {
+                    //  resolve = Função de sucesso
 
-                let formData = new FormData(); // tratando os arquivos
-                formData.append('input-file', file); // colocando os arquivos no formData. O primeiro parâmetro é o nome do campo que o POST vai receber e o segundo é o arquivo
-
-                this.startUploadTime = Date.now(); // Pega a hora em que foi iniciado o upload.
-
-                ajax.send(formData);// envia o arquivo
+                    // getMetada tras todos os dados do arquivo - retorna uma promise
+                    fileRef.getMetadata().then(metadata => {
+                        resolve(metadata);
+                    }).catch(error => {
+                        reject(error);
+                    });
+                });
             }));
+
+            /* CÓDIGO P/ UPLOAD DE ARQUIVO NO SERVIDOR WEB
+            let formData = new FormData(); // tratando os arquivos
+            formData.append('input-file', file); // colocando os arquivos no formData. O primeiro parâmetro é o nome do campo que o POST vai receber e o segundo é o arquivo
+
+            // Chama a função que faz a requisição utilizando o AJAX e guarda a promise que o método retorna no array promises
+            promises.push(this.ajax('/upload', 'POST', formData, () => {
+                            this.uploadProgress(event, file) // Passa para o método o evento onde contém as informações de quantos bytes faltam para fazer o upload e o arquivo como segundo parâmetro.
+                        }, () => {
+                            this.startUploadTime = Date.now(); // Pega a hora em que foi iniciado o upload.
+                    }));
+
+                    */
         });
 
         return Promise.all(promises); // retorna uma promise para cada arquivo
@@ -335,6 +594,8 @@ class DropBoxController {
 
         let li = document.createElement('li'); // Cria a li
         li.dataset.key = key; // Adiciona um atributo HTML dataset no li com o nome de key, contendo a key(hash) gerado pelo Firebase.
+        // File é um objeto, precisa converter para string para guardar no dataset
+        li.dataset.file = JSON.stringify(file); // Adiciona um atributo HTML dataset no li com o nome de file, contendo as informações do arquivo.
 
         li.innerHTML = `${this.getFileIconView(file)}
                         <div class="name text-center">${file.name}</div>`;
@@ -346,6 +607,8 @@ class DropBoxController {
     // Lê os arquivos do DB
     readFiles(){
 
+        this.lastFolder = this.currentFolder.join('/'); // Atribui ao lastFolder o valor da pasta atual
+
         this.getFirebaseReference().on('value', snapshot => { // O DB do Firebase fica esperando por um evento(value) e quando uma alteração ocorre, retorna um snapshot(foto)
 
             this.listFilesElement.innerHTML = ''; // Zera a lista UL
@@ -354,19 +617,99 @@ class DropBoxController {
                 let key = snapshotItem.key; // Pega a chave(hash) do item
                 let data = snapshotItem.val(); // Pega os dados;
 
-                this.listFilesElement.appendChild(this.getFileView(data, key)); // Adiciona um filho(no caso, li) ao elemento pai(no caso, ul) 
+                // Verifica se o nó que está no data tem um tipo
+                if(data.type){
 
+                    this.listFilesElement.appendChild(this.getFileView(data, key)); // Adiciona um filho(no caso, li) ao elemento pai(no caso, ul) 
+                }
                 //console.log(key, data);
             });
         });
 
     }
 
-    // Inicia eventos para o li
-    initEventsLi(li){
-        li.addEventListener('click', event => { // Evento de click no li
+    // Método que abre uma pasta
+    openFolder(){
 
-            this.listFilesElement.dispatchEvent(this.onSelectionChange);// Avisa ao listFilesElement que houve uma mudança na seleção
+        // Se existe uma pasta anterior
+        if(this.lastFolder) this.getFirebaseReference(this.lastFolder).off('value'); // Passa para o Firebase a ultima pasta e desliga o evento(.off('value')) do Firebase para que ele para de olhar para a pasta anterior
+
+        this.renderNav(); // Atualiza o breadcrumbs
+        this.readFiles(); // Acessa o DB e lê as informações
+    }
+
+    // Atualiza o breadcrumbs
+    renderNav(){
+
+        let nav = document.createElement('nav');
+        let path = []; // Array para salvar o caminho de cada uma das pastas
+
+        // Para cada pasta
+        for(let i = 0; i < this.currentFolder.length; i++){
+
+            let folderName = this.currentFolder[i]; // Pega o nome da pasta atual
+            let span = document.createElement('span');
+
+            path.push(folderName);
+
+            // Se a posição i+1 for igual ao tamanho total do array, significa que eu estou na ultima posição, para pegar o nome da ultima pasta
+            if((i + 1) === this.currentFolder.length){
+
+                span.innerHTML = folderName; // Coloca o nome da pasta no span
+            } else {
+
+                span.className = 'breadcrumb-segment__wrapper'; // Adiciona uma classe no elemento span
+                span.innerHTML = `
+                            <span class="ue-effect-container uee-BreadCrumbSegment-link-0">
+                                <a href="#" data-path="${path.join('/')}" class="breadcrumb-segment">${folderName}</a>
+                            </span>
+                            <svg width="24" height="24" viewBox="0 0 24 24" class="mc-icon-template-stateless" style="top: 4px; position: relative;">
+                                <title>arrow-right</title>
+                                <path d="M10.414 7.05l4.95 4.95-4.95 4.95L9 15.534 12.536 12 9 8.464z" fill="#637282" fill-rule="evenodd"></path>
+                            </svg>
+                `;
+
+            }
+
+            // appendChild recebe apenas nós(nodes)
+            nav.appendChild(span); // Adiciona um filho ao nav
+        }
+        
+        this.navElement.innerHTML = nav.innerHTML; // Atribui ao nav do app o nav montado nesse método
+
+        // Pega todas tags a dentro do nav e faz um forEach
+        this.navElement.querySelectorAll('a').forEach(a => {
+
+            // Adiciona um evento para cada tag a encontrada
+            a.addEventListener('click', event => {
+                event.preventDefault(); // Impede o comportamento padrão da tag a.(Utilizado aqui para não aparecer # na URL)
+
+                this.currentFolder = a.dataset.path.split('/'); // Divide a string, colocando / e transforma em um array e guarda no currentFolder
+                this.openFolder(); // Abre a pasta atual
+            });
+        });
+
+    }
+
+    // Inicia eventos para o li(cada item, arquivo, pasta etc)
+    initEventsLi(li){
+
+        li.addEventListener('dblclick', event => { // Adiciona evento de double click no li
+
+            let file = JSON.parse(li.dataset.file); // Pega as informações de arquivo que estão no dataset do li
+
+            switch (file.type) {
+                case 'folder':
+                    this.currentFolder.push(file.name); // Coloca no array currentFolder o nome da pasta
+                    this.openFolder(); // Abre a pasta
+                    break;
+            
+                default:
+                    window.open(file.path); // abre o arquivo
+            }
+        });
+
+        li.addEventListener('click', event => { // Evento de click no li
 
             if (event.shiftKey) {
                 
@@ -395,6 +738,8 @@ class DropBoxController {
                         }
                     });
 
+                    this.listFilesElement.dispatchEvent(this.onSelectionChange);// Avisa ao listFilesElement que houve uma mudança na seleção
+
                     return true; // Retorna para parar a execução e não executar o li.classList.toggle
 
                     
@@ -410,6 +755,8 @@ class DropBoxController {
             }
 
             li.classList.toggle('selected'); // Adiciona a classe selected no CSS
+
+            this.listFilesElement.dispatchEvent(this.onSelectionChange);// Avisa ao listFilesElement que houve uma mudança na seleção
         });
     }
 }
