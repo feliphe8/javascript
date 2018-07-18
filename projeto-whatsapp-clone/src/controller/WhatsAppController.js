@@ -1,4 +1,8 @@
-class WhatsAppController {
+
+import {Format} from './../util/Format';
+import {CameraController} from './CameraController';
+
+export class WhatsAppController {
 
     constructor(){
 
@@ -221,23 +225,325 @@ class WhatsAppController {
 
         // Adiciona o evento de click no botão de anexar foto no menu de anexar
         this.el.btnAttachPhoto.on('click', event => {
-            console.log('Photo');
+            
+            // Força o click no input
+            this.el.inputPhoto.click();
+        });
+
+        // Adiciona o evento que espera uma mudança no inputPhoto
+        this.el.inputPhoto.on('change', event => {
+
+            console.log(this.el.inputPhoto.files);
+            // [... coleção] = spread transforma uma coleção para array para utilizar o forEach
+            [...this.el.inputPhoto.files].forEach(file => {
+                console.log(file);
+            });
         });
 
         // Adiciona o evento de click no botão de camera no menu de anexar
         this.el.btnAttachCamera.on('click', event => {
-            console.log('Camera');
+            
+            // Esconde o painel de conversa
+            this.closeAllMainPanel();
+            // Adiciona a classe que abre o painel da camera
+            this.el.panelCamera.addClass('open');
+
+            // Corrige o layout do painel da camera
+            this.el.panelCamera.css({
+                'height': 'calc(100% - 120px)'
+            });
+
+            // Cria uma instância da camera, passando como parâmetro no construtor o elemento HTML video onde será renderizado em tempo real o que a camera está vendo
+            this._camera = new CameraController(this.el.videoCamera);
+        });
+
+        // Adiciona o evento de click no xzinho que fecha o painel da camera
+        this.el.btnClosePanelCamera.on('click', event => {
+
+            // Esconde o painel da camera removendo a classe open
+            this.closeAllMainPanel();
+
+            // Mostra o painel da conversa
+            this.el.panelMessagesContainer.show();
+
+            // Para a camera
+            this._camera.stop();
+
+        });
+
+        // Adiciona o evento de click no botão de tirar foto
+        this.el.btnTakePicture.on('click', event => {
+            
+            // Chama o método que tira foto
+            let dataUrl = this._camera.takePicture();
+
+            // Guarda o retorno do takePicture(dataUrl - canvas em base64) no source da tag img
+            this.el.pictureCamera.src = dataUrl;
+
+            // Mostra a img que estava escondido
+            this.el.pictureCamera.show();
+
+            // Esconde o video
+            this.el.videoCamera.hide();
+
+            // Mostra  o botão de tirar outra foto
+            this.el.btnReshootPanelCamera.show();
+
+            // Oculta o botão de tirar foto pois nesse momento a foto já foi tirada
+            this.el.containerTakePicture.hide();
+
+            // Mostra o botão de enviar a foto
+            this.el.containerSendPicture.show();
+        });
+
+        // Adiciona o evento de click no botão de tirar foto novamente no painel da camera
+        this.el.btnReshootPanelCamera.on('click', event => {
+
+            // Esconde a img
+            this.el.pictureCamera.hide();
+
+            // Mostra o video
+            this.el.videoCamera.show();
+
+            // Esconde  o botão de tirar outra foto
+            this.el.btnReshootPanelCamera.hide();
+
+            // Mostra o botão de tirar foto
+            this.el.containerTakePicture.show();
+
+            // Esconde o botão de enviar a foto
+            this.el.containerSendPicture.hide();
+        });
+
+        // Adiciona o evento de click no botão de enviar a foto
+        this.el.btnSendPicture.on('click', event => {
+
+            console.log(this.el.pictureCamera.src);
         });
 
         // Adiciona o evento de click no botão de anexar documento no menu de anexar
         this.el.btnAttachDocument.on('click', event => {
-            console.log('Document');
+            
+            // Esconde o painel de conversa
+            this.closeAllMainPanel();
+
+             // Adiciona a classe que abre o painel do document preview
+            this.el.panelDocumentPreview.addClass('open');
+
+            // Corrige o layout do painel do document preview
+            this.el.panelDocumentPreview.css({
+                'height': 'calc(100% - 120px)'
+            });
+        });
+
+        // Adiciona o evento de click no icone de fechar o painel de document preview
+        this.el.btnClosePanelDocumentPreview.on('click', event => {
+
+            // Esconde o painel da camera removendo a classe open
+            this.closeAllMainPanel();
+
+            // Mostra o painel da conversa
+            this.el.panelMessagesContainer.show();
+        });
+
+        // Adiciona o evento de click no icone que envia o documento no painel de document preview
+        this.el.btnSendDocument.on('click', event => {
+
+            console.log('send document');
         });
 
         // Adiciona o evento de click no botão de anexar contato no menu de anexar
         this.el.btnAttachContact.on('click', event => {
-            console.log('Contact');
+            // Mostra o modal de contatos
+            this.el.modalContacts.show();
         });
+
+        // Adiciona o evento de click no icone de fechar o modal de contatos
+        this.el.btnCloseModalContacts.on('click', event => {
+            // Esconde o modal de contatos
+            this.el.modalContacts.hide();
+        });
+
+        // Adiciona o evento de click no icone do microfone
+        this.el.btnSendMicrophone.on('click', event => {
+
+            // Mostra o menu de gravação de audio
+            this.el.recordMicrophone.show();
+
+            // Esconde o botão de microfone
+            this.el.btnSendMicrophone.hide();
+
+            // Inicia o timer do microfone quando o menu de gravação é aberto
+            this.startRecordMicrophoneTime();
+        });
+
+        // Adiciona o evento de click no icone de cancelar o microfone no menu de gravação de audio
+        this.el.btnCancelMicrophone.on('click', event => {
+
+            this.closeRecordMicrophone();
+        });
+
+        // Adiciona o evento de click no icone de finalizar a gravação de audio
+        this.el.btnFinishMicrophone.on('click', event => {
+
+            this.closeRecordMicrophone();
+        });
+
+        // Adiciona o evento de keyup(se o usuário está digitando) no input de enviar mensagem na conversa
+        this.el.inputText.on('keyup', event => {
+
+            // Se tiver conteúdo na div de enviar mensagem
+            if(this.el.inputText.innerHTML.length){
+
+                // Esconde o placeholder
+                this.el.inputPlaceholder.hide();
+                
+                // Esconde o botão do microfone
+                this.el.btnSendMicrophone.hide();
+
+                // Mostra o botão de enviar mensagem
+                this.el.btnSend.show();
+            } else {
+
+                // Mostra o placeholder
+                this.el.inputPlaceholder.show();    
+                
+                 // Mostra o botão do microfone
+                 this.el.btnSendMicrophone.show();
+
+                 // Esconde o botão de enviar mensagem
+                 this.el.btnSend.hide();
+
+            }
+        });
+
+        // Adiciona o evento keypress(a tecla está sendo pressionada - para saber qual tecla o usuário pressionou) no inputText da conversa
+        this.el.inputText.on('keypress', event => {
+
+            // Se o usuário apertou Enter sem estar pressionando o CTRL
+            if(event.key === 'Enter' && !event.ctrlKey){
+
+                event.preventDefault(); // Cancela o comportamento padrão da tecla enter
+
+                this.el.btnSend.click(); // Força o click no botão enviar
+            }
+        })
+
+        // Adiciona o evento de click no botão de enviar mensagem
+        this.el.btnSend.on('click', event => {
+
+            console.log(this.el.inputText.innerHTML);
+        });
+
+        // Adiciona o evento de click no icone dos emojis
+        this.el.btnEmojis.on('click', event => {
+
+            // Abre o painel dos emojis quando clica no icone e fecha se clicar denovo
+            this.el.panelEmojis.toggleClass('open');
+
+        });
+
+        // Pega cada emoji do painel de emojis e faz um forEach
+        this.el.panelEmojis.querySelectorAll('.emojik').forEach(emoji => {
+
+            // Adiciona o evento de click para cada emoji
+            emoji.on('click', event => {
+
+                console.log(emoji.dataset.unicode);
+
+                // Clona o node do emoji
+                let img = this.el.imgEmojiDefault.cloneNode();
+
+                // Atribui ao emoji clonado o mesmo css do emoji
+                img.style.cssText = emoji.style.cssText;
+
+                // Copia o unicode do emoji para o clone
+                img.dataset.unicode = emoji.dataset.unicode;
+
+                // Guarda o unicode no alt da img
+                img.alt = emoji.dataset.unicode;
+
+                // Faz um forEach percorrendo as classes css do emoji
+                emoji.classList.forEach( name => {
+
+                    // Atribui ao clone as classes css do emoji
+                    img.classList.add(name);
+                });
+
+                // Pega o cursor(do teclado) da janela
+                let cursor = window.getSelection();
+
+                // cursor.focusNode = para saber se o cursor está definido, pegar o node no qual o cursor está focado
+                // Se não estiver focado em lugar nenhum ou o id do node onde o cursor está focado não for igual ao input-text(id do campo de texto)
+                if(!cursor.focusNode || !cursor.focusNode.id == 'input-text') {
+                    // Força o foco no campo de texto
+                    this.el.inputText.focus();
+
+                    // Pega o cursor dentro do campo de texto
+                    cursor = window.getSelection();
+                }
+
+                // Cria um range(intervalo)
+                let range = document.createRange();
+
+                // Pega a posição do cursor
+                range = cursor.getRangeAt(0);
+
+                // Apaga os caracteres que estão selecionados
+                range.deleteContents();
+
+                // Cria um fragmento(utilizado para fazer uma alteração em uma sentença, interferir no meio de uma expressão)
+                let frag = document.createDocumentFragment();
+
+                // Guarda o emoji clonado no fragmento
+                frag.appendChild(img);
+
+                // Insere o fragmento com o emoji clonado no range selecionado
+                range.insertNode(frag);
+
+                // Coloca o cursor após a img(emoji)
+                range.setStartAfter(img);
+
+                // Força o evento de keyup no campo de texto para sumir com o placeholder quando colocar o emoji
+                this.el.inputText.dispatchEvent(new Event('keyup'));
+
+            });
+        });
+
+    }
+
+    startRecordMicrophoneTime(){
+
+        let start = Date.now(); // Pega o tempo inicial da gravação
+
+        // Estipula um intervalo de tempo de 100 milisegundos(10 vezes por segundo). e guarda o cálculo da hora atual - a hora que começou a gravação
+        this._recordMicrophoneInterval = setInterval(() => {
+
+            this.el.recordMicrophoneTimer.innerHTML = Format.toTime(Date.now() - start);
+        }, 100);
+    }
+
+    // Método que esconde o menu de gravação de audio e habilita o botão de microfone novamente
+    closeRecordMicrophone(){
+
+         // Mostra o menu de gravação de audio
+         this.el.recordMicrophone.hide();
+
+         // Esconde o botão de microfone
+         this.el.btnSendMicrophone.show();
+
+         // Limpa o intervalo em que ficou contando o tempo na gravação do audio
+         clearInterval(this._recordMicrophoneInterval);
+    }
+
+    // Método que fecha todos os paineis principais
+    closeAllMainPanel(){
+
+        // Esconde o painel de conversa
+        this.el.panelMessagesContainer.hide();
+
+        this.el.panelCamera.removeClass('open');
+        this.el.panelDocumentPreview.removeClass('open');
     }
 
     // Método que fecha o menu de anexar
