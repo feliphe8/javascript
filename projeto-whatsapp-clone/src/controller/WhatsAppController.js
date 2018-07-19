@@ -1,6 +1,9 @@
 
-import {Format} from './../util/Format';
+import {Format} from '../util/Format';
 import {CameraController} from './CameraController';
+import {MicrophoneController} from './MicrophoneController';
+import {DocumentPreviewController} from './DocumentPreviewController';
+import {Firebase} from './../util/Firebase';
 
 export class WhatsAppController {
 
@@ -9,6 +12,7 @@ export class WhatsAppController {
         this.elementsPrototype(); // Adiciona métodos no prototype do Element
         this.loadElements(); // Pega todos os elementos HTML que possui id
         this.initEvents(); // Inicia os eventos
+        this._firebase = new Firebase(); // Faz uso da classe Firebase
     }
 
     loadElements(){
@@ -334,6 +338,95 @@ export class WhatsAppController {
             this.el.panelDocumentPreview.css({
                 'height': 'calc(100% - 120px)'
             });
+
+            // Força o click no input para abrir o dialogo para escolher o arquivo a ser enviado
+            this.el.inputDocument.click();
+        });
+
+        // Adiciona o evento change(evento que espera uma mudança) no inputDocument
+        this.el.inputDocument.on('change', event => {
+
+            // Verifica se algum arquivo foi enviado
+            if (this.el.inputDocument.files.length) {
+
+                // Corrige o layout do painel do document preview
+                this.el.panelDocumentPreview.css({
+                    'height': '1%'
+                });
+
+                // Pega o primeiro arquivo
+                let file = this.el.inputDocument.files[0];
+
+                // Cria uma instância do DocumentPreview passando o arquivo como parâmetro
+                this._documentPreviewController = new DocumentPreviewController(file);
+
+                // Executa o método que retorna uma promise com o preview do arquivo
+                this._documentPreviewController.getPreviewData().then(result => {
+
+
+                    // Guarda o retorno do getPreviewData() na tag img quando o retorno for imagem
+                    this.el.imgPanelDocumentPreview.src = result.src;
+
+                    // Guarda o nome do arquivo que veio na promise no HTML
+                    this.el.infoPanelDocumentPreview.innerHTML = result.info;
+
+                    // Mostra o painel onde será mostrado o preview do arquivo quando for IMAGEM
+                    this.el.imagePanelDocumentPreview.show();
+
+                    // Esconde o painel que mostra o preview do arquivo
+                    this.el.filePanelDocumentPreview.hide();
+
+                    // Corrige o layout do painel do document preview
+                    this.el.panelDocumentPreview.css({
+                        'height': 'calc(100% - 120px)'
+                    });
+
+                }).catch(error => {
+
+                    // Corrige o layout do painel do document preview
+                    this.el.panelDocumentPreview.css({
+                        'height': 'calc(100% - 120px)'
+                    });
+                    
+                    // Caso não seja uma imagem ou PDF, cai aqui
+                    switch(file.type){
+                        // Caso o arquivo seja excel
+                        case 'application/vnd.ms-excel':
+                        case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                            // Altera a classe do icone para mostrar o icone Excel
+                            this.el.iconPanelDocumentPreview.className = 'jcxhw icon-doc-xls';
+                            break;
+
+                        // Caso seja powerpoint
+                        case 'application/vnd.ms-powerpoint':
+                        case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+                            // Altera a classe do icone para mostrar o icone PowerPoint
+                            this.el.iconPanelDocumentPreview.className = 'jcxhw icon-doc-ppt';
+                            break;
+
+                        // Caso seja documento Word
+                        case 'application/vnd.msword':
+                        case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                            // Altera a classe do icone para mostrar o icone documento Word
+                            this.el.iconPanelDocumentPreview.className = 'jcxhw icon-doc-doc';
+                            break;
+
+                        default:
+                            // Altera a classe do icone para mostrar o icone genérico
+                            this.el.iconPanelDocumentPreview.className = 'jcxhw icon-doc-generic';
+                            break;
+                    }
+
+                    // Coloca o nome do arquivo no HTML
+                    this.el.filenamePanelDocumentPreview.innerHTML = file.name;
+
+                    // Esconde o painel onde será mostrado o preview do arquivo quando for IMAGEM
+                    this.el.imagePanelDocumentPreview.hide();
+
+                    // Mostra o painel que mostra o preview do arquivo
+                    this.el.filePanelDocumentPreview.show();
+                });
+            }
         });
 
         // Adiciona o evento de click no icone de fechar o painel de document preview
@@ -373,18 +466,41 @@ export class WhatsAppController {
             // Esconde o botão de microfone
             this.el.btnSendMicrophone.hide();
 
-            // Inicia o timer do microfone quando o menu de gravação é aberto
-            this.startRecordMicrophoneTime();
+            // Faz instância do MicrophoneController
+            this._microphoneController = new MicrophoneController();
+
+
+            // Adiciona o evento ready para saber quando o mic estiver disponivel, começar a gravar
+            this._microphoneController.on('ready', audio => {
+
+                console.log('Ready Event');
+
+                // Inicia a gravação
+                this._microphoneController.startRecorder();
+
+            });
+
+            this._microphoneController.on('recordtimer', timer => {
+
+                this.el.recordMicrophoneTimer.innerHTML = Format.toTime(timer);
+            });
         });
 
         // Adiciona o evento de click no icone de cancelar o microfone no menu de gravação de audio
         this.el.btnCancelMicrophone.on('click', event => {
 
+            // Para a gravação do microfone
+            this._microphoneController.stopRecorder();
+
+            // Fecha o menu de microphone
             this.closeRecordMicrophone();
         });
 
         // Adiciona o evento de click no icone de finalizar a gravação de audio
         this.el.btnFinishMicrophone.on('click', event => {
+
+             // Para a gravação do microfone
+             this._microphoneController.stopRecorder();
 
             this.closeRecordMicrophone();
         });
@@ -512,17 +628,6 @@ export class WhatsAppController {
 
     }
 
-    startRecordMicrophoneTime(){
-
-        let start = Date.now(); // Pega o tempo inicial da gravação
-
-        // Estipula um intervalo de tempo de 100 milisegundos(10 vezes por segundo). e guarda o cálculo da hora atual - a hora que começou a gravação
-        this._recordMicrophoneInterval = setInterval(() => {
-
-            this.el.recordMicrophoneTimer.innerHTML = Format.toTime(Date.now() - start);
-        }, 100);
-    }
-
     // Método que esconde o menu de gravação de audio e habilita o botão de microfone novamente
     closeRecordMicrophone(){
 
@@ -531,9 +636,6 @@ export class WhatsAppController {
 
          // Esconde o botão de microfone
          this.el.btnSendMicrophone.show();
-
-         // Limpa o intervalo em que ficou contando o tempo na gravação do audio
-         clearInterval(this._recordMicrophoneInterval);
     }
 
     // Método que fecha todos os paineis principais

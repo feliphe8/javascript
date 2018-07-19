@@ -10,6 +10,10 @@ npm install webpack-dev-server@2.5.1 --save
 npm run start
 npm run build
 
+npm install pdfjs-dist --save
+
+npm install firebase --save
+
 [![Hcode Treinamentos](https://www.hcode.com.br/res/img/hcode-200x100.png)](https://www.hcode.com.br)
 
 Projeto desenvolvido como exemplo do Curso Completo de JavaScript na Udemy.com.
