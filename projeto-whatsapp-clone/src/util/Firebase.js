@@ -1,3 +1,4 @@
+
 // Faz uso do Firebase
 const firebase = require('firebase');
 require('firebase/firestore');
@@ -22,7 +23,8 @@ export class Firebase {
     init(){
 
         // Verifica se o Firebase já foi inicializado
-        if(!this._initialized){
+        // window._initializedFirebase - torna a váriavel global, para que todas as instâncias da classe Firebase possa ver o mesmo atributo
+        if(!window._initializedFirebase){
 
             // Initialize Firebase
             firebase.initializeApp(this._config);
@@ -32,7 +34,7 @@ export class Firebase {
                 timestampsInSnapshots: true
             });
 
-            this._initialized = true;
+            window._initializedFirebase = true;
         }
     }
 
@@ -46,6 +48,30 @@ export class Firebase {
     static hd(){
 
         return firebase.storage();
+    }
+
+    initAuth(){
+        // Retorna uma promise
+        return new Promise((resolve, reject) => {
+
+            let provider = new firebase.auth.GoogleAuthProvider();
+
+            // Quer iniciar a aplicação com qual conta? Provider = Google
+            firebase.auth().signInWithPopup(provider).then(result => {
+
+                // Pega o token de acesso do firebase, existe apenas por um certo tempo, utilizado para validação
+                let token = result.credential.accessToken;
+
+                // Pega o usuario
+                let user = result.user;
+
+                // Retorna o usuário e o token
+                resolve({user, token});
+
+            }).catch(error => {
+                reject(error);
+            });
+        });
     }
 
 }
