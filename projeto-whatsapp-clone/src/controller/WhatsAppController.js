@@ -5,6 +5,8 @@ import {MicrophoneController} from './MicrophoneController';
 import {DocumentPreviewController} from './DocumentPreviewController';
 import {Firebase} from './../util/Firebase';
 import {User} from './../model/User';
+import {Chat} from './../model/Chat';
+import {Message} from './../model/Message';
 
 export class WhatsAppController {
 
@@ -158,24 +160,9 @@ export class WhatsAppController {
             // Evento de click na div onde está o contato
             div.on('click', event => {
 
-                // Mostra o nome do contato no painel de conversa
-                this.el.activeName.innerHTML = contact.name;
-
-                // Mostra o status do contato no painel de conversa
-                this.el.activeStatus.innerHTML = contact.status;
-
-                // Se o contato tiver foto
-                if(contact.photo) {
-                    let img = this.el.activePhoto;
-                    img.src = contact.photo;
-                    img.show();
-                }
-
-                // Esconde a home
-                this.el.home.hide();
-
-                // Mostra o main(painel de conversa)
-                this.el.main.css({display: 'flex'});
+                // Ativa o chat
+                this.setActiveChat(contact);
+                
             });
 
             // Coloca o contato na tela
@@ -185,6 +172,80 @@ export class WhatsAppController {
         });
 
         this._user.getContacts();
+    }
+
+    // Método responsável por ativar o painel de chat do contato
+    setActiveChat(contact){
+
+        // Verifica se existe um contato ativo
+        if (this._contactActive) {
+            
+            // Zera o onSnapshot caso exista um contato ativo, para ele parar de ouvir o chat
+            Message.getRef(this._contactActive.chatId).onSnapshot(() => {});
+        }
+
+        // Guarda o contato ativo
+        this._contactActive = contact;
+
+
+        // Mostra o nome do contato no painel de conversa
+        this.el.activeName.innerHTML = contact.name;
+
+        // Mostra o status do contato no painel de conversa
+        this.el.activeStatus.innerHTML = contact.status;
+
+        // Se o contato tiver foto
+        if(contact.photo) {
+            let img = this.el.activePhoto;
+            img.src = contact.photo;
+            img.show();
+        }
+
+        // Esconde a home
+        this.el.home.hide();
+
+        // Mostra o main(painel de conversa)
+        this.el.main.css({display: 'flex'});
+
+        // Pega a referência do chat com as mensagens, retorna ordenado pelo timeStamp, e fica olhando o tempo todo(RealTime onSnapshot)
+        Message.getRef(this._contactActive.chatId).orderBy('timeStamp').onSnapshot(docs => {
+
+            // Limpa o painel de mensagens
+            this.el.panelMessagesContainer.innerHTML = '';
+
+            // Para cada documento que ele retornar
+            docs.forEach(doc => {
+
+                // Pega os dados do documento
+                let data = doc.data();
+
+                // Guarda o id
+                data.id = doc.id;
+
+                // Se não existir uma mensagem com o id igual
+                // Verificação para enviar apenas se a mensagem já não foi enviado, pra não ficar carregando todas as mensagens toda vez que enviar uma nova mensagem
+                if (!this.el.panelMessagesContainer.querySelector('#' + data.id)) {
+
+                    // Instãncia a classe message
+                    let message = new Message();
+
+                    // Carrega o objeto com os dados que vieram do JSON
+                    message.fromJSON(data);
+
+                    // Verifica se é minha mensagem
+                    let me = (data.from === this._user.email );
+
+                    // Método que verifica o tipo da mensagem, retorna um elemento HTML
+                    let view = message.getViewElement(me);
+
+                    // Coloca o elemento HTML no painel
+                    this.el.panelMessagesContainer.appendChild(view);
+                }
+
+            });
+        });
+
+
     }
 
     loadElements(){
@@ -389,13 +450,26 @@ export class WhatsAppController {
                 // Se o usuário for encontrado
                 if(data.name) {
 
-                    // Adiciona o contato
-                    this._user.addContact(contact).then( () => {
+                    // Cria a conversa se não existir, se existir traz o ID
+                    Chat.createIfNotExists(this._user.email, contact.email).then(chat => {
+
+                        // Guarda o ID do chat no contato(VC)
+                        contact.chatId = chat.id;
+
+                        // Guarda o ID do chat no seu usuário(EU)
+                        this._user.chatId = chat.id;
+
+                        // Adiciona no contato(VC) o SEU USUÁRIO(EU)
+                        contact.addContact(this._user);
+
+                        // Adiciona o contato
+                        this._user.addContact(contact).then( () => {
 
                         // Força o click para fechar o painel
                         this.el.btnClosePanelAddContact.click();
                         console.info('Contato adicionado.');
 
+                        });
                     });
                     
                 } else {
@@ -756,7 +830,14 @@ export class WhatsAppController {
         // Adiciona o evento de click no botão de enviar mensagem
         this.el.btnSend.on('click', event => {
 
-            console.log(this.el.inputText.innerHTML);
+            // Envia a mensagem, passando o id do chat ativo e a mensagem
+            Message.send(this._contactActive.chatId, this._user.email, 'text', this.el.inputText.innerHTML);
+
+            // Limpa o campo de mensagem
+            this.el.inputText.innerHTML = '';
+
+            // Fecha o painel de emojis caso ele esteja aberto
+            this.el.panelEmojis.removeClass('open');
         });
 
         // Adiciona o evento de click no icone dos emojis
